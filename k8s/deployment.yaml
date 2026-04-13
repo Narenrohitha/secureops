@@ -1,0 +1,130 @@
+# ── Namespace ──────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+  labels:
+    environment: production
+---
+# ── Deployment ─────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secureops-app
+  namespace: production
+  labels:
+    app: secureops-app
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port:   "5000"
+    prometheus.io/path:   "/metrics"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: secureops-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge:        1
+      maxUnavailable:  0
+  template:
+    metadata:
+      labels:
+        app: secureops-app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser:    1001
+        fsGroup:      1001
+      containers:
+        - name: app
+          image: <YOUR_ECR_URL>/secureops-app:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name:  APP_ENV
+              value: production
+            - name:  APP_VERSION
+              value: "1.0.0"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu:    "100m"
+            limits:
+              memory: "256Mi"
+              cpu:    "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds:       10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds:       5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem:   false
+            capabilities:
+              drop: [ALL]
+---
+# ── Service ────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: secureops-app
+  namespace: production
+spec:
+  selector:
+    app: secureops-app
+  ports:
+    - port:       80
+      targetPort: 5000
+  type: ClusterIP
+---
+# ── Ingress ────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: secureops-app
+  namespace: production
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: app.secureops.local
+      http:
+        paths:
+          - path:     /
+            pathType: Prefix
+            backend:
+              service:
+                name: secureops-app
+                port:
+                  number: 80
+---
+# ── HorizontalPodAutoscaler ────────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: secureops-app
+  namespace: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: secureops-app
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type:               Utilization
+          averageUtilization: 70

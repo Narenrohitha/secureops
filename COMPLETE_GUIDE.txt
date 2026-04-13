@@ -1,0 +1,1415 @@
+# ═══════════════════════════════════════════════════════════════════
+#  SECUREOPS — COMPLETE DEVSECOPS PROJECT GUIDE (BEGINNER FRIENDLY)
+#  Every single step. No tools skipped. Manual installation only.
+# ═══════════════════════════════════════════════════════════════════
+
+
+╔══════════════════════════════════════════════════════════════════╗
+║  WHAT YOU WILL BUILD                                             ║
+║                                                                  ║
+║  A production DevSecOps pipeline that:                           ║
+║  → Developer pushes code to GitHub                               ║
+║  → Jenkins automatically picks it up                             ║
+║  → SonarQube checks code quality                                 ║
+║  → Trivy scans for security vulnerabilities                      ║
+║  → Docker builds a container image                               ║
+║  → Image is pushed to AWS ECR (private registry)                 ║
+║  → ArgoCD automatically deploys to Kubernetes                    ║
+║  → Prometheus & Grafana monitor everything                       ║
+║  → Wazuh watches for security threats                            ║
+║  → Teleport gives secure access to all servers                   ║
+╚══════════════════════════════════════════════════════════════════╝
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 0 — WHAT YOU NEED BEFORE STARTING
+════════════════════════════════════════════════════════════════════
+
+  1. An AWS Account (free tier) → https://aws.amazon.com/free
+  2. A GitHub Account → https://github.com
+  3. A computer with a terminal (Mac/Linux/Windows WSL)
+  4. Basic knowledge of typing commands (that's all!)
+
+  AWS FREE TIER gives you:
+  ┌─────────────────────────────────────────────────────────┐
+  │  750 hours/month of t2.micro EC2 instances              │
+  │  5 GB of S3 storage                                     │
+  │  500 MB of ECR (Docker registry)                        │
+  │  1 million CloudWatch metrics                           │
+  └─────────────────────────────────────────────────────────┘
+
+  EC2 INSTANCES YOU WILL CREATE:
+  ┌─────────────────┬────────────┬─────────────────────────┐
+  │ Server Name     │ Type       │ What runs on it         │
+  ├─────────────────┼────────────┼─────────────────────────┤
+  │ jenkins-server  │ t2.micro   │ Jenkins CI/CD           │
+  │ sonarqube-server│ t2.micro   │ SonarQube + PostgreSQL  │
+  │ wazuh-server    │ t2.micro   │ Wazuh SIEM              │
+  │ teleport-server │ t2.micro   │ Teleport PAM            │
+  │ k8s-master      │ t2.medium  │ Kubernetes master       │
+  │ k8s-worker-1    │ t2.micro   │ Kubernetes worker       │
+  │ k8s-worker-2    │ t2.micro   │ Kubernetes worker       │
+  └─────────────────┴────────────┴─────────────────────────┘
+
+  NOTE: t2.medium costs ~$0.023/hour. Stop it when not using.
+  All t2.micro instances are FREE under free tier.
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 1 — CREATE YOUR SSH KEY
+════════════════════════════════════════════════════════════════════
+
+  Run this on YOUR LOCAL COMPUTER (not AWS):
+
+  STEP 1.1 — Generate SSH key pair
+  ─────────────────────────────────
+  ssh-keygen -t rsa -b 4096 -C "secureops-key"
+
+  When it asks:
+    "Enter file to save the key" → press ENTER (use default)
+    "Enter passphrase"           → press ENTER (no passphrase for now)
+
+  This creates two files:
+    ~/.ssh/id_rsa        ← your PRIVATE key (never share this)
+    ~/.ssh/id_rsa.pub    ← your PUBLIC key (you'll upload this to AWS)
+
+  STEP 1.2 — Copy your public key to clipboard
+  ─────────────────────────────────────────────
+  # On Mac:
+  cat ~/.ssh/id_rsa.pub | pbcopy
+
+  # On Linux:
+  cat ~/.ssh/id_rsa.pub
+  # Select all output and copy it
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 2 — CREATE EC2 INSTANCES ON AWS (MANUAL)
+════════════════════════════════════════════════════════════════════
+
+  Open AWS Console → EC2 → Key Pairs
+
+  STEP 2.1 — Upload your SSH key to AWS
+  ──────────────────────────────────────
+  1. Go to AWS Console → EC2
+  2. Click "Key Pairs" in the left menu
+  3. Click "Actions" → "Import key pair"
+  4. Name: secureops-key
+  5. Paste the content of your ~/.ssh/id_rsa.pub file
+  6. Click "Import key pair"
+
+  STEP 2.2 — Create Security Group
+  ──────────────────────────────────
+  1. Go to EC2 → Security Groups → "Create security group"
+  2. Name: secureops-sg
+  3. Description: SecureOps all ports
+  4. VPC: leave default
+  5. Add INBOUND rules (click "Add rule" for each):
+     ┌────────────┬────────────┬─────────────┬──────────────────┐
+     │ Type       │ Protocol   │ Port        │ Source           │
+     ├────────────┼────────────┼─────────────┼──────────────────┤
+     │ SSH        │ TCP        │ 22          │ 0.0.0.0/0        │
+     │ Custom TCP │ TCP        │ 8080        │ 0.0.0.0/0        │ ← Jenkins
+     │ Custom TCP │ TCP        │ 9000        │ 0.0.0.0/0        │ ← SonarQube
+     │ Custom TCP │ TCP        │ 3000        │ 0.0.0.0/0        │ ← Grafana
+     │ Custom TCP │ TCP        │ 9090        │ 0.0.0.0/0        │ ← Prometheus
+     │ HTTP       │ TCP        │ 80          │ 0.0.0.0/0        │
+     │ HTTPS      │ TCP        │ 443         │ 0.0.0.0/0        │
+     │ Custom TCP │ TCP        │ 5000        │ 0.0.0.0/0        │ ← App
+     │ All traffic│ All        │ All         │ secureops-sg     │ ← Internal
+     └────────────┴────────────┴─────────────┴──────────────────┘
+  6. OUTBOUND: leave "All traffic" default
+  7. Click "Create security group"
+
+  STEP 2.3 — Launch ALL 7 EC2 Instances
+  ────────────────────────────────────────
+  Do this 7 times. Steps for EACH instance:
+
+  1. EC2 → Instances → "Launch instances"
+  2. Name: (see table below)
+  3. OS: Ubuntu Server 22.04 LTS (free tier eligible)
+  4. Instance type: (see table below)
+  5. Key pair: secureops-key
+  6. Network settings → Select existing → secureops-sg
+  7. Storage: 20 GiB gp2
+  8. Click "Launch instance"
+
+  Create these 7 instances:
+  ┌───┬─────────────────────┬────────────┐
+  │ # │ Name                │ Type       │
+  ├───┼─────────────────────┼────────────┤
+  │ 1 │ jenkins-server      │ t2.micro   │
+  │ 2 │ sonarqube-server    │ t2.micro   │
+  │ 3 │ wazuh-server        │ t2.micro   │
+  │ 4 │ teleport-server     │ t2.micro   │
+  │ 5 │ k8s-master          │ t2.medium  │
+  │ 6 │ k8s-worker-1        │ t2.micro   │
+  │ 7 │ k8s-worker-2        │ t2.micro   │
+  └───┴─────────────────────┴────────────┘
+
+  STEP 2.4 — Note down all IP addresses
+  ───────────────────────────────────────
+  After launching, go to EC2 → Instances.
+  Copy the "Public IPv4 address" for each instance.
+  Write them down like this:
+
+  JENKINS_IP   = _______________
+  SONARQUBE_IP = _______________
+  WAZUH_IP     = _______________
+  TELEPORT_IP  = _______________
+  K8S_MASTER_IP = ______________
+  K8S_WORKER1_IP = _____________
+  K8S_WORKER2_IP = _____________
+
+  STEP 2.5 — Create ECR Repository (Docker Registry)
+  ─────────────────────────────────────────────────────
+  1. Go to AWS Console → ECR (Elastic Container Registry)
+  2. Click "Create repository"
+  3. Name: secureops-app
+  4. Image tag mutability: Mutable
+  5. Scan on push: Enabled
+  6. Click "Create repository"
+  7. Copy the Repository URI (looks like: 1234567890.dkr.ecr.us-east-1.amazonaws.com/secureops-app)
+
+  ECR_URL = _______________________________________________
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 3 — INSTALL JENKINS (on jenkins-server)
+════════════════════════════════════════════════════════════════════
+
+  CONNECT TO JENKINS SERVER:
+  ssh -i ~/.ssh/id_rsa ubuntu@<JENKINS_IP>
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.1 — Update the server
+  ──────────────────────────────────────────────────────────────
+  sudo apt update && sudo apt upgrade -y
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.2 — Install Java (Jenkins needs Java)
+  ──────────────────────────────────────────────────────────────
+  sudo apt install -y openjdk-17-jdk
+
+  # Verify Java is installed:
+  java -version
+  # Should show: openjdk version "17.x.x"
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.3 — Install Jenkins
+  ──────────────────────────────────────────────────────────────
+  # Step A: Add Jenkins GPG key
+  sudo wget -O /usr/share/keyrings/jenkins-keyring.asc \
+    https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+
+  # Step B: Add Jenkins repository
+  echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+    https://pkg.jenkins.io/debian-stable binary/" | \
+    sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+  # Step C: Install Jenkins
+  sudo apt update
+  sudo apt install -y jenkins
+
+  # Step D: Start and enable Jenkins
+  sudo systemctl start jenkins
+  sudo systemctl enable jenkins
+
+  # Step E: Check it's running
+  sudo systemctl status jenkins
+  # Should show: Active: active (running)
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.4 — Install Docker (Jenkins needs Docker to build images)
+  ──────────────────────────────────────────────────────────────
+  # Install Docker
+  sudo apt install -y docker.io
+
+  # Start Docker
+  sudo systemctl start docker
+  sudo systemctl enable docker
+
+  # Add jenkins and ubuntu users to docker group
+  sudo usermod -aG docker jenkins
+  sudo usermod -aG docker ubuntu
+
+  # Restart Jenkins so it picks up docker group
+  sudo systemctl restart jenkins
+
+  # Verify Docker works:
+  docker --version
+  # Should show: Docker version 24.x.x
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.5 — Install AWS CLI (to push to ECR)
+  ──────────────────────────────────────────────────────────────
+  sudo apt install -y unzip curl
+  curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+  unzip awscliv2.zip
+  sudo ./aws/install
+
+  # Verify:
+  aws --version
+  # Should show: aws-cli/2.x.x
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.6 — Install Trivy (security scanner)
+  ──────────────────────────────────────────────────────────────
+  sudo apt install -y wget apt-transport-https gnupg lsb-release
+
+  wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+    sudo apt-key add -
+
+  echo "deb https://aquasecurity.github.io/trivy-repo/deb \
+    $(lsb_release -sc) main" | \
+    sudo tee -a /etc/apt/sources.list.d/trivy.list
+
+  sudo apt update
+  sudo apt install -y trivy
+
+  # Verify:
+  trivy --version
+  # Should show: Version: 0.x.x
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.7 — Install SonarQube Scanner on Jenkins
+  ──────────────────────────────────────────────────────────────
+  # Download sonar-scanner
+  cd /opt
+  sudo wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+  sudo apt install -y unzip
+  sudo unzip sonar-scanner-cli-5.0.1.3006-linux.zip
+  sudo mv sonar-scanner-5.0.1.3006-linux sonar-scanner
+  sudo chmod +x /opt/sonar-scanner/bin/sonar-scanner
+
+  # Add to PATH
+  echo 'export PATH=$PATH:/opt/sonar-scanner/bin' | sudo tee -a /etc/environment
+  source /etc/environment
+
+  # Verify:
+  sonar-scanner --version
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.8 — Access Jenkins in your browser
+  ──────────────────────────────────────────────────────────────
+  Open browser → http://<JENKINS_IP>:8080
+
+  Get the initial admin password:
+  sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+
+  Copy the password → paste in browser → click Continue
+  → Click "Install suggested plugins" (wait ~5 minutes)
+  → Create admin user (remember the username and password!)
+  → Click "Save and Finish"
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.9 — Install Jenkins Plugins
+  ──────────────────────────────────────────────────────────────
+  Jenkins → Manage Jenkins → Plugins → Available plugins
+
+  Search and install each one (tick the checkbox, then install):
+  ✓ SonarQube Scanner
+  ✓ Docker Pipeline
+  ✓ Docker Commons
+  ✓ Amazon ECR
+  ✓ AWS Credentials
+  ✓ Pipeline: AWS Steps
+  ✓ Kubernetes CLI
+  ✓ Slack Notification
+  ✓ Git Parameter
+  ✓ Blue Ocean (optional - nice UI)
+
+  Click "Install" and tick "Restart Jenkins when installation is complete"
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.10 — Add AWS Credentials to Jenkins
+  ──────────────────────────────────────────────────────────────
+  First, create AWS Access Keys:
+  1. AWS Console → IAM → Users → Your user → Security credentials
+  2. Click "Create access key"
+  3. Choose "Command Line Interface (CLI)"
+  4. Copy Access Key ID and Secret Access Key
+
+  Then add to Jenkins:
+  Jenkins → Manage Jenkins → Credentials → System → Global credentials
+  → "Add Credentials"
+  Kind: AWS Credentials
+  ID: aws-credentials
+  Access Key ID: <your-aws-access-key>
+  Secret Access Key: <your-aws-secret-key>
+  Click Save
+
+  Also add GitHub credentials:
+  → "Add Credentials"
+  Kind: Username with password
+  ID: github-credentials
+  Username: <your-github-username>
+  Password: <your-github-personal-access-token>
+  (Create token at: GitHub → Settings → Developer settings → Personal access tokens)
+  Click Save
+
+  ──────────────────────────────────────────────────────────────
+  STEP 3.11 — Configure SonarQube in Jenkins
+  ──────────────────────────────────────────────────────────────
+  Jenkins → Manage Jenkins → System → SonarQube servers
+  → "Add SonarQube"
+  Name: SonarQube
+  Server URL: http://<SONARQUBE_IP>:9000
+  Server authentication token: (add from SonarQube — do this after Phase 4)
+  Click Save
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 4 — INSTALL SONARQUBE (on sonarqube-server)
+════════════════════════════════════════════════════════════════════
+
+  CONNECT TO SONARQUBE SERVER:
+  ssh -i ~/.ssh/id_rsa ubuntu@<SONARQUBE_IP>
+
+  ──────────────────────────────────────────────────────────────
+  STEP 4.1 — System settings (SonarQube needs this)
+  ──────────────────────────────────────────────────────────────
+  sudo apt update && sudo apt upgrade -y
+
+  # Increase system limits (SonarQube requires these)
+  sudo sysctl -w vm.max_map_count=524288
+  sudo sysctl -w fs.file-max=131072
+
+  # Make settings permanent
+  echo "vm.max_map_count=524288" | sudo tee -a /etc/sysctl.conf
+  echo "fs.file-max=131072"      | sudo tee -a /etc/sysctl.conf
+
+  # Set file descriptor limits
+  echo "* soft nofile 131072" | sudo tee -a /etc/security/limits.conf
+  echo "* hard nofile 131072" | sudo tee -a /etc/security/limits.conf
+
+  ──────────────────────────────────────────────────────────────
+  STEP 4.2 — Install Docker and Docker Compose
+  ──────────────────────────────────────────────────────────────
+  sudo apt install -y docker.io docker-compose
+  sudo systemctl start docker
+  sudo systemctl enable docker
+  sudo usermod -aG docker ubuntu
+
+  # Log out and back in to apply group change:
+  exit
+  ssh -i ~/.ssh/id_rsa ubuntu@<SONARQUBE_IP>
+
+  ──────────────────────────────────────────────────────────────
+  STEP 4.3 — Create SonarQube docker-compose file
+  ──────────────────────────────────────────────────────────────
+  mkdir -p ~/sonarqube && cd ~/sonarqube
+
+  cat > docker-compose.yml << 'EOF'
+version: '3.8'
+services:
+  sonarqube:
+    image: sonarqube:community
+    container_name: sonarqube
+    depends_on:
+      - sonar-db
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_JDBC_URL=jdbc:postgresql://sonar-db:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar2024
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    restart: unless-stopped
+
+  sonar-db:
+    image: postgres:15
+    container_name: sonar-db
+    environment:
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar2024
+      - POSTGRES_DB=sonar
+    volumes:
+      - sonar_postgresql_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
+  sonar_postgresql_data:
+EOF
+
+  # Start SonarQube
+  docker-compose up -d
+
+  # Watch the logs (wait until you see "SonarQube is up"):
+  docker-compose logs -f sonarqube
+  # Press CTRL+C to stop watching logs
+
+  ──────────────────────────────────────────────────────────────
+  STEP 4.4 — Configure SonarQube
+  ──────────────────────────────────────────────────────────────
+  Open browser → http://<SONARQUBE_IP>:9000
+
+  Login: admin / admin
+  → It will ask you to change password → set: Admin@Secure2024
+
+  Create a project:
+  1. Click "Create project manually"
+  2. Project display name: SecureOps Platform
+  3. Project key: secureops-app
+  4. Main branch: main
+  5. Click "Set Up"
+  6. Choose "Locally"
+  7. Click "Generate" to create a token
+  8. COPY THE TOKEN — you need it for Jenkins!
+  9. Click "Continue" → choose "Other" → Linux
+  10. You'll see a sonar-scanner command — note the -Dsonar.login= value
+
+  Add token to Jenkins:
+  Jenkins → Manage Jenkins → Credentials → Add
+  Kind: Secret text
+  Secret: <paste the SonarQube token>
+  ID: sonar-token
+  Click Save
+
+  Then update SonarQube server config in Jenkins with this token.
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 5 — KUBERNETES CLUSTER SETUP (kubeadm)
+════════════════════════════════════════════════════════════════════
+
+  !! IMPORTANT: Run STEP 5.1 through 5.4 on ALL THREE nodes !!
+     (k8s-master, k8s-worker-1, k8s-worker-2)
+
+  Connect to each node separately:
+  ssh -i ~/.ssh/id_rsa ubuntu@<K8S_MASTER_IP>
+  ssh -i ~/.ssh/id_rsa ubuntu@<K8S_WORKER1_IP>
+  ssh -i ~/.ssh/id_rsa ubuntu@<K8S_WORKER2_IP>
+
+  ──────────────────────────────────────────────────────────────
+  STEP 5.1 — Prepare OS on EVERY node
+  ──────────────────────────────────────────────────────────────
+  sudo apt update && sudo apt upgrade -y
+
+  # Disable swap (Kubernetes REQUIRES this)
+  sudo swapoff -a
+  # Make it permanent:
+  sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+  # Verify swap is off:
+  free -h
+  # Swap line should show: 0B  0B  0B
+
+  ──────────────────────────────────────────────────────────────
+  STEP 5.2 — Load required kernel modules on EVERY node
+  ──────────────────────────────────────────────────────────────
+  # Load modules now:
+  sudo modprobe overlay
+  sudo modprobe br_netfilter
+
+  # Make modules load on boot:
+  cat << EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+
+  # Set network settings for Kubernetes:
+  cat << EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                  = 1
+EOF
+
+  # Apply settings:
+  sudo sysctl --system
+
+  ──────────────────────────────────────────────────────────────
+  STEP 5.3 — Install containerd (container runtime) on EVERY node
+  ──────────────────────────────────────────────────────────────
+  sudo apt install -y containerd
+
+  # Create containerd config directory:
+  sudo mkdir -p /etc/containerd
+
+  # Generate default config:
+  containerd config default | sudo tee /etc/containerd/config.toml
+
+  # IMPORTANT: Enable systemd cgroup driver:
+  sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' \
+    /etc/containerd/config.toml
+
+  # Restart containerd:
+  sudo systemctl restart containerd
+  sudo systemctl enable containerd
+
+  # Verify:
+  sudo systemctl status containerd
+  # Should show: Active: active (running)
+
+  ──────────────────────────────────────────────────────────────
+  STEP 5.4 — Install kubeadm, kubelet, kubectl on EVERY node
+  ──────────────────────────────────────────────────────────────
+  sudo apt install -y apt-transport-https ca-certificates curl gpg
+
+  # Add Kubernetes repository key:
+  curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | \
+    sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+  # Add Kubernetes repository:
+  echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] \
+    https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | \
+    sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+  # Install Kubernetes tools:
+  sudo apt update
+  sudo apt install -y kubelet kubeadm kubectl
+
+  # Pin versions (don't auto-update):
+  sudo apt-mark hold kubelet kubeadm kubectl
+
+  # Enable kubelet:
+  sudo systemctl enable kubelet
+
+  # Verify:
+  kubeadm version
+  kubectl version --client
+  kubelet --version
+
+  ──────────────────────────────────────────────────────────────
+  STEP 5.5 — Initialize Kubernetes MASTER only
+  ──────────────────────────────────────────────────────────────
+  !! Run this ONLY on k8s-master !!
+
+  ssh -i ~/.ssh/id_rsa ubuntu@<K8S_MASTER_IP>
+
+  # Initialize the cluster:
+  sudo kubeadm init \
+    --pod-network-cidr=192.168.0.0/16 \
+    --apiserver-advertise-address=<K8S_MASTER_PRIVATE_IP> \
+    --node-name k8s-master
+
+  # NOTE: Use the PRIVATE IP of master (shown in AWS EC2 console
+  # as "Private IPv4 address"), NOT the public IP!
+
+  # After init completes, you'll see output like:
+  # "Your Kubernetes control-plane has initialized successfully!"
+  # and a "kubeadm join ..." command — COPY AND SAVE THIS COMMAND!
+
+  ──────────────────────────────────────────────────────────────
+  STEP 5.6 — Set up kubectl access on MASTER
+  ──────────────────────────────────────────────────────────────
+  !! Still on k8s-master !!
+
+  mkdir -p $HOME/.kube
+  sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+  # Verify kubectl works:
+  kubectl get nodes
+  # Should show: k8s-master   NotReady   control-plane   1m
+  # (NotReady is OK for now — network plugin not installed yet)
+
+  ──────────────────────────────────────────────────────────────
+  STEP 5.7 — Install Calico network plugin (on MASTER)
+  ──────────────────────────────────────────────────────────────
+  !! Still on k8s-master !!
+
+  kubectl apply -f \
+    https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
+
+  # Wait 2 minutes, then check:
+  kubectl get nodes
+  # Should show: k8s-master   Ready   control-plane   3m
+
+  kubectl get pods -n kube-system
+  # All pods should be Running
+
+  ──────────────────────────────────────────────────────────────
+  STEP 5.8 — Join WORKER nodes to the cluster
+  ──────────────────────────────────────────────────────────────
+  !! Run on EACH WORKER node (k8s-worker-1 and k8s-worker-2) !!
+
+  # Use the join command you saved from Step 5.5.
+  # It looks like this (your values will be different):
+  sudo kubeadm join 10.0.1.100:6443 \
+    --token abcdef.1234567890abcdef \
+    --discovery-token-ca-cert-hash sha256:abc123...
+
+  # If you lost the command, generate a new one on MASTER:
+  kubeadm token create --print-join-command
+
+  ──────────────────────────────────────────────────────────────
+  STEP 5.9 — Verify all nodes joined (on MASTER)
+  ──────────────────────────────────────────────────────────────
+  ssh -i ~/.ssh/id_rsa ubuntu@<K8S_MASTER_IP>
+
+  kubectl get nodes
+  # Expected output:
+  # NAME          STATUS   ROLES           AGE
+  # k8s-master    Ready    control-plane   10m
+  # k8s-worker-1  Ready    <none>          3m
+  # k8s-worker-2  Ready    <none>          2m
+
+  # ALL nodes must show "Ready" before continuing!
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 6 — BUILD AND TEST THE PYTHON APP LOCALLY
+════════════════════════════════════════════════════════════════════
+
+  Do this on YOUR LOCAL COMPUTER (not AWS)
+
+  ──────────────────────────────────────────────────────────────
+  STEP 6.1 — Install Docker on your computer
+  ──────────────────────────────────────────────────────────────
+  Mac:   Download Docker Desktop from https://www.docker.com/products/docker-desktop
+  Linux: sudo apt install -y docker.io docker-compose
+
+  ──────────────────────────────────────────────────────────────
+  STEP 6.2 — Clone/create the project
+  ──────────────────────────────────────────────────────────────
+  # Create a GitHub repo named "secureops" on github.com
+  # Then clone it:
+  git clone https://github.com/YOUR_USERNAME/secureops.git
+  cd secureops
+
+  # Copy all the project files from the downloaded secureops.zip
+  # into this folder (the files from this guide)
+
+  ──────────────────────────────────────────────────────────────
+  STEP 6.3 — Test the app locally with Python
+  ──────────────────────────────────────────────────────────────
+  cd app
+
+  # Install Python dependencies
+  pip install -r requirements.txt
+
+  # Run the app
+  python app.py
+
+  # Open browser: http://localhost:5000
+  # You should see the SecureOps dashboard!
+  # Press CTRL+C to stop
+
+  ──────────────────────────────────────────────────────────────
+  STEP 6.4 — Build Docker image locally
+  ──────────────────────────────────────────────────────────────
+  # Make sure you're in the app/ directory
+  cd app
+
+  # Build the image
+  docker build -t secureops-app:v1 .
+
+  # This will take 2-3 minutes on first run (downloading layers)
+
+  # Verify image was created:
+  docker images
+  # Should show: secureops-app   v1   ...
+
+  ──────────────────────────────────────────────────────────────
+  STEP 6.5 — Run the Docker container locally
+  ──────────────────────────────────────────────────────────────
+  docker run -d \
+    --name secureops-test \
+    -p 5000:5000 \
+    -e APP_ENV=development \
+    -e APP_VERSION=1.0.0 \
+    secureops-app:v1
+
+  # Check it's running:
+  docker ps
+  # Should show the container with STATUS: Up
+
+  # Open browser: http://localhost:5000
+  # Dashboard should load!
+
+  # Check health endpoint:
+  curl http://localhost:5000/health
+  # Should show: {"status":"healthy","version":"1.0.0",...}
+
+  # Check metrics endpoint (Prometheus format):
+  curl http://localhost:5000/metrics
+
+  # Stop and remove test container:
+  docker stop secureops-test
+  docker rm secureops-test
+
+  ──────────────────────────────────────────────────────────────
+  STEP 6.6 — Run full stack with Docker Compose
+  ──────────────────────────────────────────────────────────────
+  # Go back to project root:
+  cd ..
+
+  # Start everything:
+  docker-compose up -d
+
+  # Watch startup:
+  docker-compose logs -f
+  # Press CTRL+C when everything is running
+
+  # Check all containers:
+  docker-compose ps
+
+  # Access services:
+  # App:        http://localhost:5000  or  http://localhost:80
+  # Grafana:    http://localhost:3000  (admin / SecureOps2024)
+  # Prometheus: http://localhost:9090
+  # SonarQube:  http://localhost:9000
+
+  # Stop when done:
+  docker-compose down
+
+  ──────────────────────────────────────────────────────────────
+  STEP 6.7 — Push code to GitHub
+  ──────────────────────────────────────────────────────────────
+  cd secureops  # your project root
+
+  git add .
+  git commit -m "feat: initial SecureOps platform setup"
+  git push origin main
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 7 — PUSH DOCKER IMAGE TO AWS ECR
+════════════════════════════════════════════════════════════════════
+
+  Do this on YOUR LOCAL COMPUTER
+
+  ──────────────────────────────────────────────────────────────
+  STEP 7.1 — Configure AWS CLI on your computer
+  ──────────────────────────────────────────────────────────────
+  aws configure
+  # Enter your AWS Access Key ID
+  # Enter your AWS Secret Access Key
+  # Default region: us-east-1
+  # Default output format: json
+
+  ──────────────────────────────────────────────────────────────
+  STEP 7.2 — Login to ECR
+  ──────────────────────────────────────────────────────────────
+  # Replace 123456789012 with your actual AWS Account ID
+  # Find it: AWS Console → click your name (top right) → Account ID
+
+  aws ecr get-login-password --region us-east-1 | \
+    docker login --username AWS --password-stdin \
+    123456789012.dkr.ecr.us-east-1.amazonaws.com
+
+  # Should show: Login Succeeded
+
+  ──────────────────────────────────────────────────────────────
+  STEP 7.3 — Tag and push the image
+  ──────────────────────────────────────────────────────────────
+  # Set your ECR URL (replace with yours):
+  ECR_URL=123456789012.dkr.ecr.us-east-1.amazonaws.com/secureops-app
+
+  # Tag image:
+  docker tag secureops-app:v1 ${ECR_URL}:v1
+  docker tag secureops-app:v1 ${ECR_URL}:latest
+
+  # Push to ECR:
+  docker push ${ECR_URL}:v1
+  docker push ${ECR_URL}:latest
+
+  # Verify in AWS Console → ECR → secureops-app → Images
+  # You should see v1 and latest tags
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 8 — DEPLOY TO KUBERNETES
+════════════════════════════════════════════════════════════════════
+
+  !! Run on k8s-master !!
+  ssh -i ~/.ssh/id_rsa ubuntu@<K8S_MASTER_IP>
+
+  ──────────────────────────────────────────────────────────────
+  STEP 8.1 — Install NGINX Ingress Controller
+  ──────────────────────────────────────────────────────────────
+  # Install Helm first:
+  curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+  # Verify Helm:
+  helm version
+
+  # Add ingress-nginx repo:
+  helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  helm repo update
+
+  # Install ingress-nginx:
+  helm install ingress-nginx ingress-nginx/ingress-nginx \
+    --namespace ingress-nginx \
+    --create-namespace \
+    --set controller.service.type=NodePort \
+    --set controller.service.nodePorts.http=30080 \
+    --set controller.service.nodePorts.https=30443
+
+  # Verify:
+  kubectl get pods -n ingress-nginx
+  # Should show: ingress-nginx-controller-xxx   Running
+
+  ──────────────────────────────────────────────────────────────
+  STEP 8.2 — Create ECR image pull secret
+  ──────────────────────────────────────────────────────────────
+  # Kubernetes needs credentials to pull from ECR
+  # First get ECR login password:
+  ECR_PASSWORD=$(aws ecr get-login-password --region us-east-1)
+  ECR_REGISTRY=123456789012.dkr.ecr.us-east-1.amazonaws.com
+
+  kubectl create namespace production
+
+  kubectl create secret docker-registry ecr-secret \
+    --docker-server=${ECR_REGISTRY} \
+    --docker-username=AWS \
+    --docker-password=${ECR_PASSWORD} \
+    --namespace=production
+
+  ──────────────────────────────────────────────────────────────
+  STEP 8.3 — Edit the deployment.yaml with your ECR URL
+  ──────────────────────────────────────────────────────────────
+  # On your LOCAL computer, edit k8s/deployment.yaml
+  # Find this line:
+  #   image: <YOUR_ECR_URL>/secureops-app:latest
+  # Replace with:
+  #   image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/secureops-app:latest
+  #
+  # Also add imagePullSecrets under spec.template.spec:
+  #   imagePullSecrets:
+  #     - name: ecr-secret
+
+  # Push the change:
+  git add k8s/deployment.yaml
+  git commit -m "fix: set ECR image URL"
+  git push origin main
+
+  ──────────────────────────────────────────────────────────────
+  STEP 8.4 — Apply Kubernetes manifests
+  ──────────────────────────────────────────────────────────────
+  # Copy k8s files to master (or clone your repo on master):
+  git clone https://github.com/YOUR_USERNAME/secureops.git
+  cd secureops
+
+  # Apply all manifests:
+  kubectl apply -f k8s/deployment.yaml
+
+  # Watch pods start up:
+  kubectl get pods -n production -w
+  # Press CTRL+C when pods show Running
+
+  # Expected output:
+  # NAME                             READY   STATUS    RESTARTS
+  # secureops-app-7d5f6c8b4-abc12    1/1     Running   0
+  # secureops-app-7d5f6c8b4-def34    1/1     Running   0
+
+  ──────────────────────────────────────────────────────────────
+  STEP 8.5 — Test your deployment
+  ──────────────────────────────────────────────────────────────
+  # Get the NodePort to access your app:
+  kubectl get svc -n production
+
+  # Access app from browser:
+  # http://<K8S_WORKER1_IP>:30080
+  # OR
+  # http://<K8S_MASTER_IP>:30080
+
+  # Check app health:
+  curl http://<K8S_WORKER1_IP>:30080/health
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 9 — INSTALL ARGOCD (GitOps continuous deployment)
+════════════════════════════════════════════════════════════════════
+
+  !! Run on k8s-master !!
+
+  ──────────────────────────────────────────────────────────────
+  STEP 9.1 — Install ArgoCD
+  ──────────────────────────────────────────────────────────────
+  # Create ArgoCD namespace:
+  kubectl create namespace argocd
+
+  # Install ArgoCD:
+  kubectl apply -n argocd \
+    -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+  # Wait for pods to be ready (takes 3-4 minutes):
+  kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s
+
+  # Verify all pods running:
+  kubectl get pods -n argocd
+
+  ──────────────────────────────────────────────────────────────
+  STEP 9.2 — Expose ArgoCD UI
+  ──────────────────────────────────────────────────────────────
+  # Change service to NodePort so we can access the UI:
+  kubectl patch svc argocd-server -n argocd \
+    -p '{"spec":{"type":"NodePort","ports":[{"port":443,"targetPort":8080,"nodePort":30443,"protocol":"TCP","name":"https"},{"port":80,"targetPort":8080,"nodePort":30080,"protocol":"TCP","name":"http"}]}}'
+
+  # Access ArgoCD: https://<K8S_MASTER_IP>:30443
+  # (Click "Accept risk" for the self-signed certificate warning)
+
+  ──────────────────────────────────────────────────────────────
+  STEP 9.3 — Get ArgoCD admin password
+  ──────────────────────────────────────────────────────────────
+  kubectl -n argocd get secret argocd-initial-admin-secret \
+    -o jsonpath="{.data.password}" | base64 -d && echo
+
+  # Copy the password and login to ArgoCD UI:
+  # Username: admin
+  # Password: <the password above>
+
+  ──────────────────────────────────────────────────────────────
+  STEP 9.4 — Connect GitHub repo to ArgoCD
+  ──────────────────────────────────────────────────────────────
+  In ArgoCD UI:
+  1. Settings → Repositories → Connect Repo
+  2. Choose HTTPS
+  3. Repository URL: https://github.com/YOUR_USERNAME/secureops.git
+  4. Username: your-github-username
+  5. Password: your-github-personal-access-token
+  6. Click "Connect"
+
+  ──────────────────────────────────────────────────────────────
+  STEP 9.5 — Create ArgoCD Application
+  ──────────────────────────────────────────────────────────────
+  # Apply the ArgoCD application manifest:
+  kubectl apply -f k8s/argocd-app.yaml
+
+  # In ArgoCD UI, you should see:
+  # Application: secureops-app
+  # Status: Synced
+  # Health: Healthy
+
+  # From now on — when you push code to GitHub,
+  # Jenkins builds and updates k8s/deployment.yaml,
+  # ArgoCD detects the change and auto-deploys!
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 10 — PROMETHEUS + GRAFANA MONITORING
+════════════════════════════════════════════════════════════════════
+
+  !! Run on k8s-master !!
+
+  ──────────────────────────────────────────────────────────────
+  STEP 10.1 — Install Prometheus and Grafana with Helm
+  ──────────────────────────────────────────────────────────────
+  # Add Prometheus community chart:
+  helm repo add prometheus-community \
+    https://prometheus-community.github.io/helm-charts
+  helm repo update
+
+  # Create monitoring namespace:
+  kubectl create namespace monitoring
+
+  # Install the kube-prometheus-stack (includes Prometheus + Grafana + AlertManager):
+  helm install kube-prometheus-stack \
+    prometheus-community/kube-prometheus-stack \
+    --namespace monitoring \
+    --set grafana.adminPassword=SecureOps2024 \
+    --set grafana.service.type=NodePort \
+    --set grafana.service.nodePort=30300 \
+    --set prometheus.service.type=NodePort \
+    --set prometheus.service.nodePort=30090
+
+  # Wait for pods:
+  kubectl get pods -n monitoring -w
+  # Press CTRL+C when all are Running
+
+  ──────────────────────────────────────────────────────────────
+  STEP 10.2 — Access Grafana
+  ──────────────────────────────────────────────────────────────
+  Open browser: http://<K8S_WORKER1_IP>:30300
+  Username: admin
+  Password: SecureOps2024
+
+  ──────────────────────────────────────────────────────────────
+  STEP 10.3 — Import dashboards
+  ──────────────────────────────────────────────────────────────
+  In Grafana UI:
+  1. Click + → Import dashboard
+  2. Enter dashboard ID: 1860 → Click Load
+     (Node Exporter Full — shows CPU, memory, disk for all nodes)
+  3. Select Prometheus as datasource → Import
+
+  Repeat for:
+  - ID 6417 → Kubernetes Cluster monitoring
+  - ID 315  → Kubernetes cluster monitoring (pods)
+
+  ──────────────────────────────────────────────────────────────
+  STEP 10.4 — Add custom Prometheus scrape for your app
+  ──────────────────────────────────────────────────────────────
+  # Create a ServiceMonitor so Prometheus scrapes your app:
+  cat << 'EOF' | kubectl apply -f -
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: secureops-app
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: secureops-app
+  namespaceSelector:
+    matchNames:
+      - production
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+EOF
+
+  # After a few minutes, in Prometheus:
+  # Go to http://<K8S_WORKER1_IP>:30090
+  # Status → Targets
+  # You should see secureops-app/0 as a target
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 11 — INSTALL WAZUH SIEM (on wazuh-server)
+════════════════════════════════════════════════════════════════════
+
+  CONNECT TO WAZUH SERVER:
+  ssh -i ~/.ssh/id_rsa ubuntu@<WAZUH_IP>
+
+  ──────────────────────────────────────────────────────────────
+  STEP 11.1 — System update
+  ──────────────────────────────────────────────────────────────
+  sudo apt update && sudo apt upgrade -y
+
+  ──────────────────────────────────────────────────────────────
+  STEP 11.2 — Download Wazuh installer
+  ──────────────────────────────────────────────────────────────
+  curl -sO https://packages.wazuh.com/4.7/wazuh-install.sh
+  curl -sO https://packages.wazuh.com/4.7/config.yml
+
+  ──────────────────────────────────────────────────────────────
+  STEP 11.3 — Create config file
+  ──────────────────────────────────────────────────────────────
+  cat > config.yml << 'EOF'
+nodes:
+  indexer:
+    - name: node-1
+      ip: "127.0.0.1"
+  server:
+    - name: wazuh-1
+      ip: "127.0.0.1"
+  dashboard:
+    - name: dashboard
+      ip: "127.0.0.1"
+EOF
+
+  ──────────────────────────────────────────────────────────────
+  STEP 11.4 — Run Wazuh installation (takes 10-15 minutes)
+  ──────────────────────────────────────────────────────────────
+  sudo bash wazuh-install.sh --generate-config-files
+  sudo bash wazuh-install.sh --wazuh-indexer node-1
+  sudo bash wazuh-install.sh --start-cluster
+  sudo bash wazuh-install.sh --wazuh-server wazuh-1
+  sudo bash wazuh-install.sh --wazuh-dashboard dashboard
+
+  # IMPORTANT: At the end you'll see credentials like:
+  # User: admin / Password: SomeGeneratedPassword
+  # COPY AND SAVE THESE!
+
+  ──────────────────────────────────────────────────────────────
+  STEP 11.5 — Access Wazuh Dashboard
+  ──────────────────────────────────────────────────────────────
+  Open browser: https://<WAZUH_IP>:443
+  (Click Accept risk for certificate warning)
+  Login with the credentials from Step 11.4
+
+  ──────────────────────────────────────────────────────────────
+  STEP 11.6 — Install Wazuh Agent on ALL K8s nodes
+  ──────────────────────────────────────────────────────────────
+  !! Run on EACH: k8s-master, k8s-worker-1, k8s-worker-2 !!
+
+  # Replace <WAZUH_IP> with your actual Wazuh server IP:
+  WAZUH_MANAGER=<WAZUH_IP>
+
+  # Add Wazuh repository:
+  curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | \
+    sudo gpg --no-default-keyring \
+    --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg \
+    --import
+  sudo chmod 644 /usr/share/keyrings/wazuh.gpg
+
+  echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] \
+    https://packages.wazuh.com/4.x/apt/ stable main" | \
+    sudo tee /etc/apt/sources.list.d/wazuh.list
+
+  # Install agent:
+  sudo apt update
+  sudo WAZUH_MANAGER=${WAZUH_MANAGER} apt install -y wazuh-agent
+
+  # Start agent:
+  sudo systemctl enable wazuh-agent
+  sudo systemctl start wazuh-agent
+
+  # Verify:
+  sudo systemctl status wazuh-agent
+  # Should show: Active: active (running)
+
+  # In Wazuh dashboard → Agents → you should see the new agent!
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 12 — INSTALL TELEPORT (on teleport-server)
+════════════════════════════════════════════════════════════════════
+
+  CONNECT TO TELEPORT SERVER:
+  ssh -i ~/.ssh/id_rsa ubuntu@<TELEPORT_IP>
+
+  ──────────────────────────────────────────────────────────────
+  STEP 12.1 — Install Teleport
+  ──────────────────────────────────────────────────────────────
+  sudo apt update
+
+  # Add Teleport repository:
+  curl https://goteleport.com/static/install.sh | sudo bash -s -- --edition=oss
+
+  # Verify:
+  teleport version
+
+  ──────────────────────────────────────────────────────────────
+  STEP 12.2 — Create Teleport config
+  ──────────────────────────────────────────────────────────────
+  sudo mkdir -p /etc/teleport /var/lib/teleport
+
+  sudo cat > /etc/teleport.yaml << 'EOF'
+version: v3
+teleport:
+  nodename: teleport-secureops
+  data_dir: /var/lib/teleport
+  log:
+    output: stderr
+    severity: INFO
+
+auth_service:
+  enabled: true
+  cluster_name: "secureops.cluster"
+  listen_addr: 0.0.0.0:3025
+  tokens:
+    - "proxy,node:secureops-join-token-2024"
+
+ssh_service:
+  enabled: true
+  labels:
+    env: production
+
+proxy_service:
+  enabled: true
+  listen_addr: 0.0.0.0:3023
+  web_listen_addr: 0.0.0.0:3080
+  public_addr: <TELEPORT_IP>:3080
+EOF
+
+  ──────────────────────────────────────────────────────────────
+  STEP 12.3 — Start Teleport
+  ──────────────────────────────────────────────────────────────
+  sudo systemctl enable teleport
+  sudo systemctl start teleport
+
+  # Verify:
+  sudo systemctl status teleport
+
+  ──────────────────────────────────────────────────────────────
+  STEP 12.4 — Create admin user
+  ──────────────────────────────────────────────────────────────
+  sudo tctl users add admin \
+    --roles=editor,access \
+    --logins=ubuntu
+
+  # This prints a URL — open it in your browser to set password
+
+  # Access Teleport UI: http://<TELEPORT_IP>:3080
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 13 — CONFIGURE JENKINS PIPELINE
+════════════════════════════════════════════════════════════════════
+
+  ──────────────────────────────────────────────────────────────
+  STEP 13.1 — Create Jenkins Pipeline job
+  ──────────────────────────────────────────────────────────────
+  In Jenkins UI → New Item
+  Name: secureops-pipeline
+  Type: Pipeline
+  Click OK
+
+  In the pipeline configuration:
+  1. Check "GitHub hook trigger for GITScm polling"
+  2. Under Pipeline → Definition: select "Pipeline script from SCM"
+  3. SCM: Git
+  4. Repository URL: https://github.com/YOUR_USERNAME/secureops.git
+  5. Credentials: select your github-credentials
+  6. Branch: */main
+  7. Script Path: Jenkinsfile
+  8. Click Save
+
+  ──────────────────────────────────────────────────────────────
+  STEP 13.2 — Add AWS Account ID to Jenkins credentials
+  ──────────────────────────────────────────────────────────────
+  Jenkins → Manage Jenkins → Credentials → Add
+  Kind: Secret text
+  Secret: 123456789012   (your AWS account ID)
+  ID: aws-account-id
+  Click Save
+
+  ──────────────────────────────────────────────────────────────
+  STEP 13.3 — Configure Kubernetes access in Jenkins
+  ──────────────────────────────────────────────────────────────
+  # On k8s-master, get the kubeconfig:
+  cat ~/.kube/config
+
+  # Copy the entire output
+
+  # In Jenkins → Manage Jenkins → Credentials → Add
+  # Kind: Secret file
+  # Upload: paste kubeconfig content into a file and upload
+  # ID: kubeconfig
+  # Click Save
+
+  ──────────────────────────────────────────────────────────────
+  STEP 13.4 — Set up GitHub Webhook
+  ──────────────────────────────────────────────────────────────
+  In GitHub → your secureops repo → Settings → Webhooks → Add webhook
+
+  Payload URL: http://<JENKINS_IP>:8080/github-webhook/
+  Content type: application/json
+  Which events: Just the push event
+  Click "Add webhook"
+
+  Now when you push code → Jenkins automatically runs the pipeline!
+
+  ──────────────────────────────────────────────────────────────
+  STEP 13.5 — Run your first pipeline
+  ──────────────────────────────────────────────────────────────
+  Jenkins → secureops-pipeline → Build Now
+
+  Watch the pipeline stages in real time.
+  Each stage shows green ✓ when passed.
+
+  Full pipeline flow:
+  [Checkout] → [SonarQube] → [Quality Gate] →
+  [Trivy FS] → [Docker Build] → [Trivy Image] →
+  [Push ECR] → [Update K8s] → ArgoCD detects change → Deploy!
+
+
+════════════════════════════════════════════════════════════════════
+  PHASE 14 — FINAL VERIFICATION
+════════════════════════════════════════════════════════════════════
+
+  STEP 14.1 — End-to-end test
+  ──────────────────────────────────────────────────────────────
+  1. Make a small change to app/app.py (e.g., change a message)
+  2. git add . && git commit -m "test: pipeline test" && git push
+  3. Watch Jenkins automatically trigger
+  4. Watch all stages pass
+  5. Watch ArgoCD automatically sync
+  6. Verify new version is deployed:
+     curl http://<K8S_WORKER1_IP>:30080/health
+
+  STEP 14.2 — Access all dashboards
+  ──────────────────────────────────────────────────────────────
+  ┌─────────────────┬────────────────────────────────────────┐
+  │ Service         │ URL                                    │
+  ├─────────────────┼────────────────────────────────────────┤
+  │ Your App        │ http://<WORKER1_IP>:30080              │
+  │ Jenkins         │ http://<JENKINS_IP>:8080               │
+  │ SonarQube       │ http://<SONARQUBE_IP>:9000             │
+  │ ArgoCD          │ https://<MASTER_IP>:30443              │
+  │ Grafana         │ http://<WORKER1_IP>:30300              │
+  │ Prometheus      │ http://<WORKER1_IP>:30090              │
+  │ Wazuh           │ https://<WAZUH_IP>:443                 │
+  │ Teleport        │ http://<TELEPORT_IP>:3080              │
+  └─────────────────┴────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════
+  COST SAVING TIPS (STAY FREE)
+════════════════════════════════════════════════════════════════════
+
+  When you're not working on the project, STOP instances:
+  AWS Console → EC2 → Select all instances → Actions → Stop
+
+  Or from AWS CLI:
+  # Stop all project instances:
+  aws ec2 describe-instances \
+    --filters "Name=tag:Project,Values=secureops" \
+    --query "Reservations[].Instances[].InstanceId" \
+    --output text | \
+  xargs aws ec2 stop-instances --instance-ids
+
+  Remember: t2.medium (k8s-master) costs money even when idle.
+  Stop it first!
+
+  FREE TIER LIMITS TO WATCH:
+  - EC2: 750 hours/month total for t2.micro
+  - S3: 5 GB storage, 20,000 GET, 2,000 PUT
+  - ECR: 500 MB/month storage
+  - Data transfer: 1 GB/month outbound free
+
+
+════════════════════════════════════════════════════════════════════
+  TROUBLESHOOTING COMMON ISSUES
+════════════════════════════════════════════════════════════════════
+
+  PROBLEM: kubectl get nodes shows NotReady
+  SOLUTION:
+    kubectl describe node <node-name>
+    # Look for "Conditions" section
+    # Usually means CNI not installed or kubelet not running
+    ssh ubuntu@<node-ip>
+    sudo systemctl status kubelet
+    sudo journalctl -u kubelet -n 50
+
+  PROBLEM: Pods stuck in Pending
+  SOLUTION:
+    kubectl describe pod <pod-name> -n production
+    # Look for "Events" at bottom
+    # Common cause: not enough resources on worker nodes
+    kubectl get nodes -o wide
+    kubectl describe node k8s-worker-1 | grep -A5 "Allocated resources"
+
+  PROBLEM: Docker build fails
+  SOLUTION:
+    # Make sure you're in the app/ directory
+    cd app
+    docker build -t test . --no-cache
+    # Look for the error line
+
+  PROBLEM: ECR push fails (no basic auth credentials)
+  SOLUTION:
+    # Re-authenticate:
+    aws ecr get-login-password --region us-east-1 | \
+      docker login --username AWS --password-stdin \
+      <YOUR_ECR_URL>
+
+  PROBLEM: Jenkins can't connect to SonarQube
+  SOLUTION:
+    # Check SonarQube is running:
+    ssh ubuntu@<SONARQUBE_IP>
+    docker-compose ps
+    # If not running: docker-compose up -d
+    # Check firewall: port 9000 must be open in security group
+
+  PROBLEM: ArgoCD shows OutOfSync
+  SOLUTION:
+    # Manual sync:
+    argocd app sync secureops-app
+    # Or click "Sync" in ArgoCD UI
+
+
+════════════════════════════════════════════════════════════════════
+  YOU HAVE BUILT:
+  A complete DevSecOps pipeline from scratch on AWS!
+════════════════════════════════════════════════════════════════════
+
+  Developer → GitHub → Jenkins → SonarQube → Trivy →
+  Docker → ECR → ArgoCD → Kubernetes →
+  Prometheus/Grafana → Wazuh → Teleport
+
+  This is production-grade infrastructure used by real companies.
+  Add this entire project to your resume/portfolio!

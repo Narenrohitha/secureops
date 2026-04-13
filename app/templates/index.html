@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SecureOps Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#0a0e1a;
+  --surface:#111827;
+  --surface2:#1a2236;
+  --border:#1f2d45;
+  --accent:#00d4aa;
+  --accent2:#3b82f6;
+  --warn:#f59e0b;
+  --danger:#ef4444;
+  --success:#10b981;
+  --text:#e2e8f0;
+  --muted:#64748b;
+  --mono:'Space Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+
+/* ── grid background ── */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:linear-gradient(var(--border) 1px,transparent 1px),
+    linear-gradient(90deg,var(--border) 1px,transparent 1px);
+  background-size:40px 40px;
+  opacity:.35;pointer-events:none;z-index:0
+}
+
+/* ── header ── */
+header{
+  position:sticky;top:0;z-index:100;
+  background:rgba(10,14,26,.85);
+  backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  padding:0 2rem;
+  display:flex;align-items:center;justify-content:space-between;height:60px
+}
+.logo{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:.9rem;color:var(--accent);font-weight:700}
+.logo-icon{width:32px;height:32px;border:2px solid var(--accent);border-radius:6px;
+  display:flex;align-items:center;justify-content:center;font-size:14px}
+.status-bar{display:flex;gap:1.5rem;align-items:center;font-size:.78rem;font-family:var(--mono)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--success);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{opacity:.8;box-shadow:0 0 0 6px rgba(16,185,129,0)}}
+
+/* ── main layout ── */
+main{position:relative;z-index:1;max-width:1280px;margin:0 auto;padding:2rem}
+.page-title{font-family:var(--mono);font-size:1.6rem;color:var(--accent);margin-bottom:.25rem}
+.page-sub{font-size:.85rem;color:var(--muted);margin-bottom:2rem;font-family:var(--mono)}
+
+/* ── metric cards row ── */
+.metrics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:2rem}
+@media(max-width:900px){.metrics-row{grid-template-columns:repeat(2,1fr)}}
+.metric-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:1.25rem;position:relative;overflow:hidden;transition:border-color .2s
+}
+.metric-card:hover{border-color:var(--accent2)}
+.metric-card::after{
+  content:'';position:absolute;top:0;right:0;width:60px;height:60px;
+  background:radial-gradient(circle at top right,rgba(59,130,246,.12),transparent 70%)
+}
+.mc-label{font-size:.72rem;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem}
+.mc-value{font-size:1.75rem;font-weight:600;font-family:var(--mono);color:var(--text)}
+.mc-sub{font-size:.75rem;color:var(--muted);margin-top:.25rem}
+.mc-badge{
+  display:inline-block;margin-top:.5rem;padding:2px 8px;border-radius:20px;
+  font-size:.68rem;font-family:var(--mono);font-weight:700
+}
+.badge-ok{background:rgba(16,185,129,.15);color:var(--success);border:1px solid rgba(16,185,129,.3)}
+.badge-warn{background:rgba(245,158,11,.15);color:var(--warn);border:1px solid rgba(245,158,11,.3)}
+
+/* ── two-column ── */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem}
+@media(max-width:800px){.two-col{grid-template-columns:1fr}}
+
+/* ── panels ── */
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem}
+.panel-title{font-family:var(--mono);font-size:.8rem;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin-bottom:1.25rem;display:flex;align-items:center;gap:.5rem}
+.panel-title::before{content:'';display:block;width:3px;height:14px;background:var(--accent);border-radius:2px}
+
+/* ── pipeline ── */
+.pipeline{display:flex;flex-direction:column;gap:.6rem}
+.pipe-stage{display:flex;align-items:center;gap.75rem;padding:.6rem .75rem;border-radius:8px;background:var(--surface2);border:1px solid var(--border)}
+.pipe-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;font-family:var(--mono);font-weight:700}
+.icon-ok{background:rgba(16,185,129,.15);color:var(--success)}
+.icon-run{background:rgba(59,130,246,.15);color:var(--accent2)}
+.icon-pend{background:rgba(100,116,139,.1);color:var(--muted)}
+.pipe-name{flex:1;font-size:.82rem;padding-left:.5rem}
+.pipe-dur{font-family:var(--mono);font-size:.72rem;color:var(--muted)}
+.pipe-status{font-family:var(--mono);font-size:.68rem;padding:2px 8px;border-radius:4px}
+.ps-ok{color:var(--success)}
+.ps-run{color:var(--accent2);animation:blink 1.2s infinite}
+.ps-pend{color:var(--muted)}
+@keyframes blink{50%{opacity:.4}}
+
+/* ── security grid ── */
+.sec-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem}
+.sec-item{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.9rem;text-align:center}
+.sec-num{font-family:var(--mono);font-size:1.4rem;font-weight:700}
+.sec-label{font-size:.7rem;color:var(--muted);margin-top:.2rem;font-family:var(--mono)}
+.num-ok{color:var(--success)}
+.num-warn{color:var(--warn)}
+.num-danger{color:var(--danger)}
+
+/* ── system bars ── */
+.sys-item{margin-bottom:1rem}
+.sys-header{display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:.4rem;font-family:var(--mono)}
+.sys-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.sys-fill{height:100%;border-radius:3px;transition:width 1s ease;background:var(--accent2)}
+.sys-fill.warn{background:var(--warn)}
+.sys-fill.danger{background:var(--danger)}
+
+/* ── arch section ── */
+.arch-full{margin-top:1.5rem}
+.arch-layers{display:flex;flex-direction:column;gap:.75rem}
+.arch-layer{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem}
+.arch-layer-title{font-family:var(--mono);font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.75rem}
+.arch-tools{display:flex;flex-wrap:wrap;gap:.5rem}
+.tool-chip{
+  padding:.3rem .75rem;border-radius:6px;font-size:.75rem;font-family:var(--mono);
+  background:var(--surface2);border:1px solid var(--border);cursor:default;
+  transition:all .2s;color:var(--text)
+}
+.tool-chip:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px)}
+.tool-chip.hl{border-color:var(--accent2);color:var(--accent2);background:rgba(59,130,246,.08)}
+
+/* ── footer ── */
+footer{text-align:center;padding:2rem;font-family:var(--mono);font-size:.72rem;color:var(--muted);border-top:1px solid var(--border);margin-top:3rem}
+.ver-tag{color:var(--accent)}
+
+/* ── loading overlay ── */
+.loading{opacity:0;transition:opacity .5s}
+.loading.visible{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-icon">⬡</div>
+    SECUREOPS
+  </div>
+  <div class="status-bar">
+    <span><span class="status-dot"></span></span>
+    <span style="color:var(--success)">ALL SYSTEMS OPERATIONAL</span>
+    <span style="color:var(--muted)">v{{ version }}</span>
+    <span style="color:var(--muted)" id="clock"></span>
+  </div>
+</header>
+
+<main>
+  <div class="page-title">// DevSecOps Platform</div>
+  <div class="page-sub">Environment: {{ environment }} &nbsp;|&nbsp; Real-time monitoring dashboard</div>
+
+  <!-- ── metric cards ── -->
+  <div class="metrics-row">
+    <div class="metric-card">
+      <div class="mc-label">CPU Usage</div>
+      <div class="mc-value" id="cpu-val">—</div>
+      <div class="mc-sub" id="cpu-sub">Loading...</div>
+      <div class="mc-badge badge-ok" id="cpu-badge">OK</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-label">Memory</div>
+      <div class="mc-value" id="mem-val">—</div>
+      <div class="mc-sub" id="mem-sub">Loading...</div>
+      <div class="mc-badge badge-ok">HEALTHY</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-label">Disk Usage</div>
+      <div class="mc-value" id="disk-val">—</div>
+      <div class="mc-sub" id="disk-sub">Loading...</div>
+      <div class="mc-badge badge-ok">NORMAL</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-label">Uptime</div>
+      <div class="mc-value" id="uptime-val">—</div>
+      <div class="mc-sub">Application uptime</div>
+      <div class="mc-badge badge-ok">RUNNING</div>
+    </div>
+  </div>
+
+  <!-- ── pipeline + security ── -->
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title">CI/CD Pipeline</div>
+      <div class="pipeline" id="pipeline-stages">
+        <div style="color:var(--muted);font-size:.8rem;font-family:var(--mono)">Loading pipeline...</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Security Scan Results</div>
+      <div style="margin-bottom:1rem">
+        <div style="font-size:.75rem;color:var(--muted);font-family:var(--mono);margin-bottom:.6rem">TRIVY IMAGE SCAN</div>
+        <div class="sec-grid" id="trivy-grid">
+          <div class="sec-item"><div class="sec-num num-danger" id="t-critical">—</div><div class="sec-label">CRITICAL</div></div>
+          <div class="sec-item"><div class="sec-num num-warn"   id="t-high">—</div><div class="sec-label">HIGH</div></div>
+          <div class="sec-item"><div class="sec-num num-ok"     id="t-medium">—</div><div class="sec-label">MEDIUM</div></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.75rem;color:var(--muted);font-family:var(--mono);margin-bottom:.6rem">SONARQUBE</div>
+        <div class="sec-grid">
+          <div class="sec-item"><div class="sec-num num-ok"   id="sq-bugs">—</div><div class="sec-label">BUGS</div></div>
+          <div class="sec-item"><div class="sec-num num-ok"   id="sq-vulns">—</div><div class="sec-label">VULNS</div></div>
+          <div class="sec-item"><div class="sec-num num-warn" id="sq-smells">—</div><div class="sec-label">SMELLS</div></div>
+        </div>
+      </div>
+      <div style="margin-top:.9rem;display:flex;gap:.75rem">
+        <div class="mc-badge badge-ok" style="font-size:.7rem">QUALITY GATE: PASSED</div>
+        <div class="mc-badge badge-ok" style="font-size:.7rem" id="trivy-badge">TRIVY: PASSED</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── system resources + arch ── -->
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title">System Resources</div>
+      <div id="sys-resources">
+        <div class="sys-item">
+          <div class="sys-header"><span>CPU</span><span id="bar-cpu">—</span></div>
+          <div class="sys-bar"><div class="sys-fill" id="fill-cpu" style="width:0%"></div></div>
+        </div>
+        <div class="sys-item">
+          <div class="sys-header"><span>Memory</span><span id="bar-mem">—</span></div>
+          <div class="sys-bar"><div class="sys-fill" id="fill-mem" style="width:0%"></div></div>
+        </div>
+        <div class="sys-item">
+          <div class="sys-header"><span>Disk</span><span id="bar-disk">—</span></div>
+          <div class="sys-bar"><div class="sys-fill" id="fill-disk" style="width:0%"></div></div>
+        </div>
+        <div style="margin-top:1rem;font-size:.75rem;font-family:var(--mono);color:var(--muted)">
+          <div style="margin-bottom:.3rem">HOST: <span id="sys-host" style="color:var(--text)">—</span></div>
+          <div style="margin-bottom:.3rem">PYTHON: <span id="sys-py" style="color:var(--text)">—</span></div>
+          <div>PLATFORM: <span id="sys-plat" style="color:var(--text)">—</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Wazuh SIEM</div>
+      <div style="display:flex;flex-direction:column;gap:.65rem" id="wazuh-panel">
+        <div style="font-family:var(--mono);font-size:.8rem;color:var(--muted)">Loading alerts...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── full architecture ── -->
+  <div class="arch-full panel">
+    <div class="panel-title">Full Architecture Stack</div>
+    <div class="arch-layers">
+      <div class="arch-layer">
+        <div class="arch-layer-title">⬡ Source &amp; CI/CD</div>
+        <div class="arch-tools">
+          <span class="tool-chip hl">GitHub</span>
+          <span class="tool-chip hl">Jenkins</span>
+          <span class="tool-chip">Webhooks</span>
+          <span class="tool-chip">Jenkinsfile</span>
+          <span class="tool-chip">Slack Alerts</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-layer-title">🔒 Security Scanning</div>
+        <div class="arch-tools">
+          <span class="tool-chip hl">SonarQube</span>
+          <span class="tool-chip hl">Trivy FS Scan</span>
+          <span class="tool-chip hl">Trivy Image Scan</span>
+          <span class="tool-chip">OWASP</span>
+          <span class="tool-chip">Quality Gate</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-layer-title">🐳 Container Layer</div>
+        <div class="arch-tools">
+          <span class="tool-chip hl">Docker</span>
+          <span class="tool-chip hl">AWS ECR</span>
+          <span class="tool-chip">Multi-stage Build</span>
+          <span class="tool-chip">Non-root User</span>
+          <span class="tool-chip">Health Checks</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-layer-title">☸ Kubernetes (Kubeadm)</div>
+        <div class="arch-tools">
+          <span class="tool-chip hl">Kubeadm</span>
+          <span class="tool-chip hl">ArgoCD</span>
+          <span class="tool-chip">Calico CNI</span>
+          <span class="tool-chip">NGINX Ingress</span>
+          <span class="tool-chip">HPA</span>
+          <span class="tool-chip">Network Policies</span>
+          <span class="tool-chip">cert-manager</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-layer-title">📊 Observability</div>
+        <div class="arch-tools">
+          <span class="tool-chip hl">Prometheus</span>
+          <span class="tool-chip hl">Grafana</span>
+          <span class="tool-chip">AlertManager</span>
+          <span class="tool-chip">Node Exporter</span>
+          <span class="tool-chip">Loki</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-layer-title">🛡 Security &amp; Access</div>
+        <div class="arch-tools">
+          <span class="tool-chip hl">Wazuh SIEM</span>
+          <span class="tool-chip hl">Teleport PAM</span>
+          <span class="tool-chip">Falco</span>
+          <span class="tool-chip">AWS IAM</span>
+          <span class="tool-chip">AWS WAF</span>
+          <span class="tool-chip">Security Groups</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-layer-title">☁ AWS Services</div>
+        <div class="arch-tools">
+          <span class="tool-chip hl">EC2 (t2.micro)</span>
+          <span class="tool-chip hl">ECR</span>
+          <span class="tool-chip">S3</span>
+          <span class="tool-chip">Route 53</span>
+          <span class="tool-chip">ACM (TLS)</span>
+          <span class="tool-chip">CloudTrail</span>
+          <span class="tool-chip">CloudWatch</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  SECUREOPS PLATFORM &nbsp;|&nbsp; <span class="ver-tag">v{{ version }}</span>
+  &nbsp;|&nbsp; ENV: {{ environment }}
+  &nbsp;|&nbsp; Built with Python + Flask + Docker + Kubernetes
+</footer>
+
+<script>
+// ── Clock ───────────────────────────────────────────────────
+function updateClock(){
+  document.getElementById('clock').textContent =
+    new Date().toISOString().replace('T',' ').slice(0,19)+' UTC'
+}
+updateClock(); setInterval(updateClock, 1000)
+
+// ── Helpers ─────────────────────────────────────────────────
+function setText(id, val){ const el=document.getElementById(id); if(el) el.textContent=val }
+function setBar(fillId, pct){
+  const el=document.getElementById(fillId); if(!el) return
+  el.style.width=pct+'%'
+  el.className='sys-fill'+(pct>85?' danger':pct>65?' warn':'')
+}
+function fmtUptime(s){
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60)
+  return h?`${h}h ${m}m`:m?`${m}m ${sec}s`:`${sec}s`
+}
+
+// ── System info ──────────────────────────────────────────────
+async function loadSystem(){
+  try{
+    const r=await fetch('/api/system'), d=await r.json()
+    setText('cpu-val', d.cpu_percent.toFixed(1)+'%')
+    setText('cpu-sub', d.platform+' / '+d.python)
+    setText('mem-val', d.memory.used_gb+'GB')
+    setText('mem-sub', d.memory.total_gb+'GB total · '+d.memory.percent+'% used')
+    setText('disk-val', d.disk.used_gb+'GB')
+    setText('disk-sub', d.disk.total_gb+'GB total · '+d.disk.percent+'% used')
+    setText('uptime-val', fmtUptime(d.uptime_seconds))
+
+    setText('bar-cpu',  d.cpu_percent.toFixed(1)+'%')
+    setText('bar-mem',  d.memory.percent+'%')
+    setText('bar-disk', d.disk.percent+'%')
+    setBar('fill-cpu',  d.cpu_percent)
+    setBar('fill-mem',  d.memory.percent)
+    setBar('fill-disk', d.disk.percent)
+
+    setText('sys-host', d.hostname)
+    setText('sys-py',   d.python)
+    setText('sys-plat', d.platform)
+  } catch(e){ console.error('system fetch failed', e) }
+}
+
+// ── Pipeline ────────────────────────────────────────────────
+async function loadPipeline(){
+  try{
+    const r=await fetch('/api/pipeline'), d=await r.json()
+    const container=document.getElementById('pipeline-stages')
+    container.innerHTML=d.stages.map(s=>{
+      const ic = s.status==='success'?'✓':s.status==='running'?'▶':'○'
+      const icClass = s.status==='success'?'icon-ok':s.status==='running'?'icon-run':'icon-pend'
+      const sc = s.status==='success'?'ps-ok':s.status==='running'?'ps-run':'ps-pend'
+      return `<div class="pipe-stage">
+        <div class="pipe-icon ${icClass}">${ic}</div>
+        <div class="pipe-name">${s.name}</div>
+        <div class="pipe-dur">${s.duration}</div>
+        <div class="pipe-status ${sc}">${s.status.toUpperCase()}</div>
+      </div>`
+    }).join('')
+  } catch(e){ console.error('pipeline fetch failed', e) }
+}
+
+// ── Security ────────────────────────────────────────────────
+async function loadSecurity(){
+  try{
+    const r=await fetch('/api/security'), d=await r.json()
+    setText('t-critical', d.trivy.critical)
+    setText('t-high',     d.trivy.high)
+    setText('t-medium',   d.trivy.medium)
+    setText('sq-bugs',    d.sonarqube.bugs)
+    setText('sq-vulns',   d.sonarqube.vulnerabilities)
+    setText('sq-smells',  d.sonarqube.code_smells)
+
+    const w=d.wazuh
+    document.getElementById('wazuh-panel').innerHTML=`
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div class="sec-item"><div class="sec-num ${w.critical>0?'num-danger':'num-ok'}">${w.critical}</div><div class="sec-label">CRITICAL</div></div>
+        <div class="sec-item"><div class="sec-num ${w.high>0?'num-warn':'num-ok'}">${w.high}</div><div class="sec-label">HIGH</div></div>
+      </div>
+      <div style="margin-top:.8rem;font-size:.78rem;font-family:var(--mono);color:var(--muted)">
+        <div style="margin-bottom:.4rem">24H ALERTS: <span style="color:var(--text)">${w.alerts_24h}</span></div>
+        <div>STATUS: <span style="color:var(--success)">${w.status.toUpperCase()}</span></div>
+      </div>
+      <div class="mc-badge badge-ok" style="margin-top:.75rem;font-size:.68rem">WAZUH: ACTIVE</div>`
+  } catch(e){ console.error('security fetch failed', e) }
+}
+
+// ── Init ────────────────────────────────────────────────────
+async function init(){
+  await Promise.all([loadSystem(), loadPipeline(), loadSecurity()])
+}
+
+init()
+setInterval(loadSystem,   10000)
+setInterval(loadPipeline, 30000)
+setInterval(loadSecurity, 60000)
+</script>
+</body>
+</html>
