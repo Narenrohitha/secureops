@@ -61,3 +61,85 @@ kubectl apply -f k8s/deployment.yaml
 
 # 5. Access your app
 kubectl get svc -n ingress-nginx
+
+
+
+
+secureops/
+├── app/                    # Flask application
+│   ├── app.py
+│   ├── Dockerfile
+│   └── requirements.txt
+├── k8s/                    # Kubernetes manifests
+│   ├── deployment.yaml
+│   └── argocd-app.yaml
+├── monitoring/             # Prometheus + Grafana
+├── chaos/                  # Chaos Mesh experiments
+├── backup/                 # Velero schedules
+├── Jenkinsfile             # 11-stage CI/CD pipeline
+└── README.md
+
+
+📖 Full guide: Medium Blog
+
+🎯 For Recruiters
+I have built:
+✅ Complete CI/CD pipeline (Jenkins → SonarQube → Trivy → Docker → ECR → EKS)
+
+✅ GitOps with ArgoCD (Self-healing, drift detection <3 min)
+
+✅ Chaos engineering (Pod kills, network delays)
+
+✅ Security enforcement (OPA blocks :latest & privileged containers)
+
+✅ Cost governance (Real-time $ per namespace)
+
+✅ Disaster recovery (Hourly S3 backups, <15 min restore)
+
+I can:
+Skill	Level
+EKS & Kubernetes	⭐⭐⭐⭐⭐
+CI/CD Pipelines	⭐⭐⭐⭐⭐
+GitOps (ArgoCD)	⭐⭐⭐⭐⭐
+Security Scanning	⭐⭐⭐⭐⭐
+Monitoring (Prometheus/Grafana)	⭐⭐⭐⭐⭐
+📍 Open for: DevOps Engineer · SRE · Cloud Engineer
+📍 Location: Remote / India / Anywhere
+⏱️ Availability: Immediate joiner
+
+📞 Connect With Me
+https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin
+https://img.shields.io/badge/GitHub-Follow-181717?logo=github
+https://img.shields.io/badge/Medium-Blog-000000?logo=medium
+
+📊 Grafana Dashboard IDs
+ID	Dashboard
+1860	Node Exporter Full
+6417	Kubernetes Cluster Overview
+315	Kubernetes Pods Monitoring
+8670	Kubecost Cost Overview
+15469	Velero Backup
+15763	OPA Gatekeeper
+🔧 Quick Troubleshooting
+Problem	Fix
+kubectl can't connect	aws eks update-kubeconfig --name secureops-cluster
+ImagePullBackOff	Recreate ECR secret
+Vault sealed	vault operator unseal <KEY>
+ECR login expired	Re-run aws ecr get-login-password | docker login
+💰 Cost Optimization
+bash
+# Scale nodes to 0 (saves ~$30/month)
+aws eks update-nodegroup-config --cluster-name secureops-cluster \
+  --nodegroup-name secureops-nodes --scaling-config minSize=0,desiredSize=0
+
+# Scale back up
+aws eks update-nodegroup-config --cluster-name secureops-cluster \
+  --nodegroup-name secureops-nodes --scaling-config minSize=2,desiredSize=2
+📄 License
+MIT License — Free to use, learn, and contribute.
+
+⭐ Star this repo if you find it useful!
+
+Built on AWS EKS | 25 Phases | 6 Workflows | Production Ready
+
+
