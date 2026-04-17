@@ -12,6 +12,9 @@
 
 ---
 
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/39d52b48-f720-4b33-98e7-ebdfec136db0" />
+
+
 ## 🎯 What You'll Build
 
 A complete, production-ready DevSecOps platform on AWS EKS.
